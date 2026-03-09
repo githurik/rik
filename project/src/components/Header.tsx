@@ -3,11 +3,15 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getNotifications } from '../lib/localDb';
 import { useDashboard } from '../contexts/DashboardContext';
+import { ApiKeySetup } from './ApiKeySetup';
+import { hasApiKey } from '../lib/ai';
 
 export function Header() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [apiKeySet, setApiKeySet] = useState(hasApiKey());
   const { session, logout } = useAuth();
   const { setCurrentView } = useDashboard();
 
@@ -42,6 +46,7 @@ export function Header() {
   }, []);
 
   return (
+    <>
     <header className="bg-white border-b border-slate-200 px-8 py-4">
       <div className="flex items-center justify-between">
         <div>
@@ -90,8 +95,17 @@ export function Header() {
             )}
           </button>
 
-          <button className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+          <button
+            onClick={() => setShowApiSettings(true)}
+            className={`p-2 rounded-lg transition-colors relative ${
+              apiKeySet ? 'text-slate-600 hover:bg-slate-100' : 'text-amber-600 hover:bg-amber-50'
+            }`}
+            title={apiKeySet ? 'AI Settings (key configured)' : 'AI Settings (no API key set)'}
+          >
             <Settings className="w-5 h-5" />
+            {!apiKeySet && (
+              <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+            )}
           </button>
 
           <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
@@ -113,5 +127,15 @@ export function Header() {
         </div>
       </div>
     </header>
+
+    {showApiSettings && (
+      <ApiKeySetup
+        onClose={() => {
+          setShowApiSettings(false);
+          setApiKeySet(hasApiKey());
+        }}
+      />
+    )}
+  </>
   );
 }
