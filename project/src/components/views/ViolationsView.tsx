@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Search, Filter, Eye, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import type { Database } from '../../lib/database.types';
-
-type Violation = Database['public']['Tables']['violations']['Row'];
+import { AlertTriangle, Search, Filter, Eye, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { getViolations, updateViolation, deleteViolation } from '../../lib/localDb';
+import type { Violation } from '../../lib/localDb';
 
 export function ViolationsView() {
   const [violations, setViolations] = useState<Violation[]>([]);
@@ -19,13 +17,8 @@ export function ViolationsView() {
 
   async function loadViolations() {
     try {
-      const { data, error } = await supabase
-        .from('violations')
-        .select('*')
-        .order('violation_date', { ascending: false });
-
-      if (error) throw error;
-      setViolations(data || []);
+      const data = await getViolations(100);
+      setViolations(data);
     } catch (error) {
       console.error('Error loading violations:', error);
     } finally {
@@ -33,21 +26,27 @@ export function ViolationsView() {
     }
   }
 
-  async function updateViolationStatus(id: string, status: string) {
+  async function handleUpdateViolationStatus(id: string, status: 'pending' | 'resolved' | 'dismissed') {
     try {
-      const { error } = await supabase
-        .from('violations')
-        .update({ status })
-        .eq('id', id);
-
-      if (error) throw error;
-      setViolations(violations.map((v) => (v.id === id ? { ...v, status } : v)));
+      await updateViolation(id, { status });
+      setViolations((prev) => prev.map((v) => (v.id === id ? { ...v, status } : v)));
       if (selectedViolation?.id === id) {
-        setSelectedViolation({ ...selectedViolation, status });
+        setSelectedViolation((prev) => prev ? { ...prev, status } : prev);
       }
     } catch (error) {
       console.error('Error updating violation:', error);
       alert('Failed to update violation status');
+    }
+  }
+
+  async function handleDeleteViolation(id: string) {
+    if (!confirm('Delete this violation record?')) return;
+    try {
+      await deleteViolation(id);
+      setViolations((prev) => prev.filter((v) => v.id !== id));
+      if (selectedViolation?.id === id) setSelectedViolation(null);
+    } catch (error) {
+      console.error('Error deleting violation:', error);
     }
   }
 
@@ -67,7 +66,13 @@ export function ViolationsView() {
     overdue_inspection: 'bg-orange-100 text-orange-800',
     overcrowding: 'bg-yellow-100 text-yellow-800',
     no_valid_inspection: 'bg-purple-100 text-purple-800',
+    wrong_lane: 'bg-blue-100 text-blue-800',
+    unsafe_loading: 'bg-pink-100 text-pink-800',
+    parking_violation: 'bg-indigo-100 text-indigo-800',
   };
+
+  const pendingCount = violations.filter((v) => v.status === 'pending').length;
+  const resolvedCount = violations.filter((v) => v.status === 'resolved').length;
 
   if (loading) {
     return (
@@ -95,9 +100,11 @@ export function ViolationsView() {
           </div>
           <div className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded-lg border border-red-200">
             <span className="text-sm font-medium text-red-600">Pending:</span>
-            <span className="text-lg font-bold text-red-800">
-              {violations.filter((v) => v.status === 'pending').length}
-            </span>
+            <span className="text-lg font-bold text-red-800">{pendingCount}</span>
+          </div>
+          <div className="flex items-center gap-2 bg-green-50 px-4 py-2 rounded-lg border border-green-200">
+            <span className="text-sm font-medium text-green-600">Resolved:</span>
+            <span className="text-lg font-bold text-green-800">{resolvedCount}</span>
           </div>
         </div>
       </div>
@@ -171,7 +178,7 @@ export function ViolationsView() {
                 filteredViolations.map((violation) => (
                   <tr key={violation.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-4 px-4">
-                      <span className="font-semibold text-slate-800">{violation.license_plate}</span>
+                      <span className="font-semibold text-slate-800 font-mono">{violation.license_plate}</span>
                     </td>
                     <td className="py-4 px-4">
                       <span
@@ -184,13 +191,13 @@ export function ViolationsView() {
                       </span>
                     </td>
                     <td className="py-4 px-4 text-slate-600 text-sm">
-                      {new Date(violation.violation_date).toLocaleString('en-KE')}
+                      {new Date(violation.timestamp).toLocaleString('en-KE')}
                     </td>
                     <td className="py-4 px-4 text-slate-600 text-sm">
                       {violation.location || 'N/A'}
                     </td>
                     <td className="py-4 px-4">
-                      {violation.confidence_score ? (
+                      {violation.confidence_score != null ? (
                         <span className="text-slate-700 font-medium">
                           {(violation.confidence_score * 100).toFixed(0)}%
                         </span>
@@ -212,12 +219,22 @@ export function ViolationsView() {
                       </span>
                     </td>
                     <td className="py-4 px-4">
-                      <button
-                        onClick={() => setSelectedViolation(violation)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setSelectedViolation(violation)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="View details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteViolation(violation.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -231,7 +248,7 @@ export function ViolationsView() {
         <ViolationDetailsModal
           violation={selectedViolation}
           onClose={() => setSelectedViolation(null)}
-          onUpdateStatus={(status) => updateViolationStatus(selectedViolation.id, status)}
+          onUpdateStatus={(status) => handleUpdateViolationStatus(selectedViolation.id, status as 'pending' | 'resolved' | 'dismissed')}
         />
       )}
     </div>
@@ -246,7 +263,7 @@ interface ViolationDetailsModalProps {
 
 function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: ViolationDetailsModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <h3 className="text-xl font-bold text-slate-800">Violation Details</h3>
@@ -262,22 +279,45 @@ function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: Violation
           <div className="grid grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-500 mb-1">License Plate</label>
-              <p className="text-lg font-semibold text-slate-800">{violation.license_plate}</p>
+              <p className="text-lg font-semibold text-slate-800 font-mono">{violation.license_plate}</p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-500 mb-1">
                 Violation Type
               </label>
-              <p className="text-lg font-semibold text-slate-800">
+              <p className="text-lg font-semibold text-slate-800 capitalize">
                 {violation.violation_type.replace(/_/g, ' ')}
               </p>
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-slate-500 mb-1">Severity</label>
+              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium capitalize ${
+                violation.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                violation.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                violation.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {violation.severity}
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-500 mb-1">Current Status</label>
+              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium capitalize ${
+                violation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                violation.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                'bg-slate-100 text-slate-800'
+              }`}>
+                {violation.status}
+              </span>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-slate-500 mb-1">Date & Time</label>
               <p className="text-slate-800">
-                {new Date(violation.violation_date).toLocaleString('en-KE')}
+                {new Date(violation.timestamp).toLocaleString('en-KE')}
               </p>
             </div>
 
@@ -286,7 +326,7 @@ function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: Violation
               <p className="text-slate-800">{violation.location || 'Not specified'}</p>
             </div>
 
-            {violation.occupant_count && (
+            {violation.occupant_count != null && (
               <div>
                 <label className="block text-sm font-medium text-slate-500 mb-1">
                   Occupant Count
@@ -295,7 +335,7 @@ function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: Violation
               </div>
             )}
 
-            {violation.confidence_score && (
+            {violation.confidence_score != null && (
               <div>
                 <label className="block text-sm font-medium text-slate-500 mb-1">
                   Detection Confidence
@@ -307,19 +347,17 @@ function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: Violation
             )}
           </div>
 
+          {violation.description && (
+            <div>
+              <label className="block text-sm font-medium text-slate-500 mb-2">Description</label>
+              <p className="text-slate-800 bg-slate-50 p-4 rounded-lg">{violation.description}</p>
+            </div>
+          )}
+
           {violation.notes && (
             <div>
               <label className="block text-sm font-medium text-slate-500 mb-2">Notes</label>
               <p className="text-slate-800 bg-slate-50 p-4 rounded-lg">{violation.notes}</p>
-            </div>
-          )}
-
-          {violation.image_url && (
-            <div>
-              <label className="block text-sm font-medium text-slate-500 mb-2">Evidence</label>
-              <div className="bg-slate-100 rounded-lg p-4 text-center">
-                <p className="text-slate-500">Image: {violation.image_url}</p>
-              </div>
             </div>
           )}
 
@@ -345,6 +383,14 @@ function ViolationDetailsModal({ violation, onClose, onUpdateStatus }: Violation
                   <XCircle className="w-4 h-4" />
                   Dismiss
                 </button>
+                {violation.status !== 'pending' && (
+                  <button
+                    onClick={() => onUpdateStatus('pending')}
+                    className="flex items-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm"
+                  >
+                    Reopen
+                  </button>
+                )}
               </div>
             </div>
 

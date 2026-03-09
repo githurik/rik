@@ -40,6 +40,12 @@ export interface Violation {
   violation_type: string;
   severity: string;
   description: string;
+  status: 'pending' | 'resolved' | 'dismissed';
+  location?: string;
+  confidence_score?: number;
+  occupant_count?: number;
+  notes?: string;
+  image_url?: string;
   timestamp: string;
   created_at: string;
 }
@@ -305,6 +311,38 @@ export async function getVehicleByPlate(plate: string): Promise<Vehicle | undefi
   });
 }
 
+export async function updateVehicle(id: string, updates: Partial<Omit<Vehicle, 'id' | 'created_at'>>): Promise<void> {
+  const database = getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([STORES.vehicles], 'readwrite');
+    const store = transaction.objectStore(STORES.vehicles);
+    const getRequest = store.get(id);
+
+    getRequest.onsuccess = () => {
+      const vehicle = getRequest.result as Vehicle;
+      if (!vehicle) { reject(new Error('Vehicle not found')); return; }
+      const updated = { ...vehicle, ...updates };
+      const updateRequest = store.put(updated);
+      updateRequest.onerror = () => reject(updateRequest.error);
+      updateRequest.onsuccess = () => resolve();
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+export async function deleteVehicle(id: string): Promise<void> {
+  const database = getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([STORES.vehicles], 'readwrite');
+    const store = transaction.objectStore(STORES.vehicles);
+    const request = store.delete(id);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
 export async function addViolation(
   data: Omit<Violation, 'id' | 'created_at'>
 ): Promise<Violation> {
@@ -339,6 +377,38 @@ export async function getViolations(limit = 50): Promise<Violation[]> {
       const results = (request.result as Violation[]).reverse().slice(0, limit);
       resolve(results);
     };
+  });
+}
+
+export async function updateViolation(id: string, updates: Partial<Violation>): Promise<void> {
+  const database = getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([STORES.violations], 'readwrite');
+    const store = transaction.objectStore(STORES.violations);
+    const getRequest = store.get(id);
+
+    getRequest.onsuccess = () => {
+      const violation = getRequest.result as Violation;
+      if (!violation) { reject(new Error('Violation not found')); return; }
+      const updated = { ...violation, ...updates };
+      const updateRequest = store.put(updated);
+      updateRequest.onerror = () => reject(updateRequest.error);
+      updateRequest.onsuccess = () => resolve();
+    };
+    getRequest.onerror = () => reject(getRequest.error);
+  });
+}
+
+export async function deleteViolation(id: string): Promise<void> {
+  const database = getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction([STORES.violations], 'readwrite');
+    const store = transaction.objectStore(STORES.violations);
+    const request = store.delete(id);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
   });
 }
 

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Car, Plus, Search, Edit2, Trash2, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import type { Database } from '../../lib/database.types';
-
-type Vehicle = Database['public']['Tables']['vehicles']['Row'];
+import { Car, Plus, Search, Edit2, Trash2, X, AlertTriangle, CheckCircle } from 'lucide-react';
+import {
+  getVehicles,
+  addVehicle,
+  updateVehicle,
+  deleteVehicle,
+} from '../../lib/localDb';
+import type { Vehicle } from '../../lib/localDb';
 
 export function VehiclesView() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -18,13 +21,10 @@ export function VehiclesView() {
 
   async function loadVehicles() {
     try {
-      const { data, error } = await supabase
-        .from('vehicles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setVehicles(data || []);
+      const data = await getVehicles();
+      // Sort by created_at descending
+      data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setVehicles(data);
     } catch (error) {
       console.error('Error loading vehicles:', error);
     } finally {
@@ -32,12 +32,11 @@ export function VehiclesView() {
     }
   }
 
-  async function deleteVehicle(id: string) {
+  async function handleDeleteVehicle(id: string) {
     if (!confirm('Are you sure you want to delete this vehicle?')) return;
 
     try {
-      const { error } = await supabase.from('vehicles').delete().eq('id', id);
-      if (error) throw error;
+      await deleteVehicle(id);
       setVehicles(vehicles.filter((v) => v.id !== id));
     } catch (error) {
       console.error('Error deleting vehicle:', error);
@@ -52,6 +51,16 @@ export function VehiclesView() {
   );
 
   const isExpired = (date: string) => new Date(date) < new Date();
+  const expiringSoon = (date: string) => {
+    const d = new Date(date);
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 30);
+    return d >= new Date() && d <= soon;
+  };
+
+  const expiredCount = vehicles.filter(
+    (v) => isExpired(v.license_expiry_date) || isExpired(v.inspection_expiry_date)
+  ).length;
 
   if (loading) {
     return (
@@ -84,6 +93,47 @@ export function VehiclesView() {
           <Plus className="w-5 h-5" />
           Add Vehicle
         </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500 font-medium">Total Vehicles</p>
+              <p className="text-3xl font-bold text-slate-800 mt-1">{vehicles.length}</p>
+            </div>
+            <div className="p-3 bg-blue-50 rounded-lg">
+              <Car className="w-7 h-7 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500 font-medium">Compliant</p>
+              <p className="text-3xl font-bold text-green-700 mt-1">
+                {vehicles.length - expiredCount}
+              </p>
+            </div>
+            <div className="p-3 bg-green-50 rounded-lg">
+              <CheckCircle className="w-7 h-7 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500 font-medium">Non-Compliant</p>
+              <p className="text-3xl font-bold text-red-700 mt-1">{expiredCount}</p>
+            </div>
+            <div className="p-3 bg-red-50 rounded-lg">
+              <AlertTriangle className="w-7 h-7 text-red-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -126,12 +176,12 @@ export function VehiclesView() {
                 filteredVehicles.map((vehicle) => (
                   <tr key={vehicle.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-4 px-4">
-                      <span className="font-semibold text-slate-800">{vehicle.license_plate}</span>
+                      <span className="font-semibold text-slate-800 font-mono">{vehicle.license_plate}</span>
                     </td>
                     <td className="py-4 px-4 text-slate-600">{vehicle.owner_name}</td>
                     <td className="py-4 px-4 text-slate-600 text-sm">{vehicle.owner_phone}</td>
                     <td className="py-4 px-4">
-                      <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-medium">
+                      <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-medium capitalize">
                         {vehicle.vehicle_type}
                       </span>
                     </td>
@@ -141,6 +191,8 @@ export function VehiclesView() {
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
                           isExpired(vehicle.license_expiry_date)
                             ? 'bg-red-100 text-red-800'
+                            : expiringSoon(vehicle.license_expiry_date)
+                            ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-green-100 text-green-800'
                         }`}
                       >
@@ -152,6 +204,8 @@ export function VehiclesView() {
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
                           isExpired(vehicle.inspection_expiry_date)
                             ? 'bg-red-100 text-red-800'
+                            : expiringSoon(vehicle.inspection_expiry_date)
+                            ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-green-100 text-green-800'
                         }`}
                       >
@@ -166,12 +220,14 @@ export function VehiclesView() {
                             setShowAddModal(true);
                           }}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => deleteVehicle(vehicle.id)}
+                          onClick={() => handleDeleteVehicle(vehicle.id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -214,41 +270,36 @@ function VehicleModal({ vehicle, onClose, onSave }: VehicleModalProps) {
     license_plate: vehicle?.license_plate || '',
     owner_name: vehicle?.owner_name || '',
     owner_phone: vehicle?.owner_phone || '',
-    owner_email: vehicle?.owner_email || '',
     vehicle_type: vehicle?.vehicle_type || 'sedan',
     vehicle_capacity: vehicle?.vehicle_capacity || 5,
     license_expiry_date: vehicle?.license_expiry_date || '',
     inspection_expiry_date: vehicle?.inspection_expiry_date || '',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError('');
 
     try {
       if (vehicle) {
-        const { error } = await supabase
-          .from('vehicles')
-          .update(formData)
-          .eq('id', vehicle.id);
-        if (error) throw error;
+        await updateVehicle(vehicle.id, formData);
       } else {
-        const { error } = await supabase.from('vehicles').insert([formData]);
-        if (error) throw error;
+        await addVehicle(formData);
       }
-
       onSave();
-    } catch (error) {
-      console.error('Error saving vehicle:', error);
-      alert('Failed to save vehicle');
+    } catch (err: any) {
+      console.error('Error saving vehicle:', err);
+      setError(err?.message || 'Failed to save vehicle. License plate may already exist.');
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <h3 className="text-xl font-bold text-slate-800">
@@ -272,8 +323,8 @@ function VehicleModal({ vehicle, onClose, onSave }: VehicleModalProps) {
                 type="text"
                 required
                 value={formData.license_plate}
-                onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => setFormData({ ...formData, license_plate: e.target.value.toUpperCase() })}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 placeholder="KBE 100A"
               />
             </div>
@@ -293,6 +344,7 @@ function VehicleModal({ vehicle, onClose, onSave }: VehicleModalProps) {
                 <option value="truck">Truck</option>
                 <option value="suv">SUV</option>
                 <option value="motorcycle">Motorcycle</option>
+                <option value="bus">Bus</option>
               </select>
             </div>
           </div>
@@ -325,31 +377,20 @@ function VehicleModal({ vehicle, onClose, onSave }: VehicleModalProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Owner Email</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Vehicle Capacity *
+              </label>
               <input
-                type="email"
-                value={formData.owner_email}
-                onChange={(e) => setFormData({ ...formData, owner_email: e.target.value })}
+                type="number"
+                required
+                min="1"
+                value={formData.vehicle_capacity}
+                onChange={(e) =>
+                  setFormData({ ...formData, vehicle_capacity: parseInt(e.target.value) })
+                }
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="owner@example.com"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Vehicle Capacity *
-            </label>
-            <input
-              type="number"
-              required
-              min="1"
-              value={formData.vehicle_capacity}
-              onChange={(e) =>
-                setFormData({ ...formData, vehicle_capacity: parseInt(e.target.value) })
-              }
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -381,6 +422,12 @@ function VehicleModal({ vehicle, onClose, onSave }: VehicleModalProps) {
               />
             </div>
           </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              {error}
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
             <button

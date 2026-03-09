@@ -99,7 +99,7 @@ export function AnalysisView() {
 
       setAnalysisResult(result);
 
-      const stored = await addAnalysisResult({
+      await addAnalysisResult({
         license_plate: result.licensePlate,
         plate_confidence: result.plateConfidence,
         occupant_count: result.occupantCount,

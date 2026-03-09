@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, CreditCard as Edit2, CheckCircle } from 'lucide-react';
+import { Plus, CreditCard as Edit2 } from 'lucide-react';
 import { DemoScenario, saveDemoScenario, getDemoScenarios } from '../lib/localDb';
 
 export function DemoScenarioManager() {

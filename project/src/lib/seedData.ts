@@ -1,25 +1,14 @@
 import {
   addAnalysisResult,
   addViolation,
+  addVehicle,
   addNotification,
   getAnalysisResults,
+  getVehicles,
+  getViolations,
   getDemoScenarios,
+  saveDemoScenario,
 } from './localDb';
-
-const sampleVehicles = [
-  { plate: 'KBE 100A', name: 'Minibus - Route 5', occupants: 14 },
-  { plate: 'KCA 200B', name: 'Pickup Truck', occupants: 8 },
-  { plate: 'KDA 300C', name: 'Public Service Vehicle', occupants: 18 },
-  { plate: 'KCN 400D', name: 'Delivery Van', occupants: 3 },
-  { plate: 'KBC 500E', name: 'Long-distance Coach', occupants: 56 },
-];
-
-const violationTypes = [
-  { type: 'overcrowding', severity: 'critical', description: 'Vehicle exceeds approved capacity' },
-  { type: 'wrong_lane', severity: 'high', description: 'Vehicle traveling in wrong lane' },
-  { type: 'parking_violation', severity: 'medium', description: 'Illegal parking detected' },
-  { type: 'unsafe_loading', severity: 'high', description: 'Load not properly secured' },
-];
 
 export async function seedInitialData() {
   try {
@@ -30,6 +19,62 @@ export async function seedInitialData() {
 
     const now = new Date();
 
+    // Seed vehicles
+    const existingVehicles = await getVehicles();
+    if (existingVehicles.length === 0) {
+      const vehicleData = [
+        {
+          license_plate: 'KBE 100A',
+          owner_name: 'John Kamau',
+          owner_phone: '+254712345678',
+          vehicle_type: 'matatu',
+          vehicle_capacity: 14,
+          license_expiry_date: new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          inspection_expiry_date: new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        },
+        {
+          license_plate: 'KCA 200B',
+          owner_name: 'Mary Wanjiru',
+          owner_phone: '+254723456789',
+          vehicle_type: 'truck',
+          vehicle_capacity: 3,
+          license_expiry_date: new Date(now.getTime() + 200 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          inspection_expiry_date: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        },
+        {
+          license_plate: 'KDA 300C',
+          owner_name: 'Peter Ochieng',
+          owner_phone: '+254734567890',
+          vehicle_type: 'matatu',
+          vehicle_capacity: 14,
+          license_expiry_date: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // expired
+          inspection_expiry_date: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        },
+        {
+          license_plate: 'KCN 400D',
+          owner_name: 'Grace Muthoni',
+          owner_phone: '+254745678901',
+          vehicle_type: 'sedan',
+          vehicle_capacity: 5,
+          license_expiry_date: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          inspection_expiry_date: new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        },
+        {
+          license_plate: 'KBC 500E',
+          owner_name: 'David Otieno',
+          owner_phone: '+254756789012',
+          vehicle_type: 'truck',
+          vehicle_capacity: 2,
+          license_expiry_date: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          inspection_expiry_date: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // expired
+        },
+      ];
+      for (const v of vehicleData) {
+        await addVehicle(v);
+      }
+    }
+
+    // Seed analysis history
     const analysisHistory = [
       {
         license_plate: 'KBE 100A',
@@ -74,9 +119,9 @@ export async function seedInitialData() {
       {
         license_plate: 'KBC 500E',
         plate_confidence: 89,
-        occupant_count: 56,
+        occupant_count: 4,
         occupant_confidence: 87,
-        violations: ['overcrowding', 'wrong_lane'],
+        violations: ['wrong_lane'],
         camera_id: 'camera-03',
         analyzed_at: new Date(now.getTime() - 2 * 3600000).toISOString(),
         analysis_metadata: { frame_quality: 'good', processing_time: '145ms' },
@@ -87,6 +132,69 @@ export async function seedInitialData() {
       await addAnalysisResult(analysis);
     }
 
+    // Seed violations
+    const existingViolations = await getViolations(1);
+    if (existingViolations.length === 0) {
+      const violationData = [
+        {
+          license_plate: 'KBE 100A',
+          violation_type: 'overcrowding',
+          severity: 'critical',
+          status: 'pending' as const,
+          description: 'Vehicle exceeds approved capacity (14/7 persons)',
+          location: 'Thika Road Junction',
+          confidence_score: 0.94,
+          occupant_count: 14,
+          timestamp: new Date(now.getTime() - 25 * 60000).toISOString(),
+        },
+        {
+          license_plate: 'KDA 300C',
+          violation_type: 'overcrowding',
+          severity: 'critical',
+          status: 'pending' as const,
+          description: 'Vehicle exceeds approved capacity (18/14 persons)',
+          location: 'Mombasa Road',
+          confidence_score: 0.91,
+          occupant_count: 18,
+          timestamp: new Date(now.getTime() - 62 * 60000).toISOString(),
+        },
+        {
+          license_plate: 'KDA 300C',
+          violation_type: 'unsafe_loading',
+          severity: 'high',
+          status: 'pending' as const,
+          description: 'Load not properly secured',
+          location: 'Mombasa Road',
+          confidence_score: 0.88,
+          timestamp: new Date(now.getTime() - 62 * 60000).toISOString(),
+        },
+        {
+          license_plate: 'KBC 500E',
+          violation_type: 'wrong_lane',
+          severity: 'high',
+          status: 'resolved' as const,
+          description: 'Vehicle detected traveling in wrong lane',
+          location: 'Ngong Road',
+          confidence_score: 0.89,
+          timestamp: new Date(now.getTime() - 2 * 3600000).toISOString(),
+        },
+        {
+          license_plate: 'KDA 300C',
+          violation_type: 'expired_license',
+          severity: 'high',
+          status: 'pending' as const,
+          description: 'Vehicle license plate expired 30 days ago',
+          location: 'System Check',
+          confidence_score: 1.0,
+          timestamp: new Date(now.getTime() - 24 * 3600000).toISOString(),
+        },
+      ];
+      for (const v of violationData) {
+        await addViolation(v);
+      }
+    }
+
+    // Seed notifications
     const notificationHistory = [
       {
         type: 'violation_detected',
@@ -122,6 +230,7 @@ export async function seedInitialData() {
       await addNotification(notification);
     }
 
+    // Seed demo scenarios
     const scenarios = await getDemoScenarios();
     if (scenarios.length === 0) {
       const defaultScenarios = [
@@ -158,7 +267,6 @@ export async function seedInitialData() {
       ];
 
       for (const scenario of defaultScenarios) {
-        const { saveDemoScenario } = await import('./localDb');
         await saveDemoScenario(scenario);
       }
     }

@@ -4,6 +4,7 @@ import {
   getAnalysisResults,
   getNotifications,
   getViolations,
+  getVehicles,
 } from '../../lib/localDb';
 
 interface Stats {
@@ -29,10 +30,11 @@ export function DashboardView() {
 
   async function loadDashboardData() {
     try {
-      const [analysisRes, violationsRes, notificationsRes] = await Promise.all([
+      const [analysisRes, violationsRes, notificationsRes, vehiclesRes] = await Promise.all([
         getAnalysisResults(50),
-        getViolations(10),
-        getNotifications(20),
+        getViolations(20),
+        getNotifications(50),
+        getVehicles(),
       ]);
 
       const todayStart = new Date();
@@ -42,17 +44,15 @@ export function DashboardView() {
         (a) => new Date(a.analyzed_at) >= todayStart
       ).length;
 
-      const activeViolations = analysisRes.filter(
-        (a) => a.violations && a.violations.length > 0
+      const activeViolations = violationsRes.filter(
+        (v) => v.status === 'pending'
       ).length;
 
-      const uniquePlates = new Set(analysisRes.map((a) => a.license_plate)).size;
-
       setStats({
-        totalVehicles: uniquePlates || 5,
+        totalVehicles: vehiclesRes.length || 5,
         activeViolations: activeViolations || 2,
-        totalAlerts: notificationsRes.filter((n) => !n.read).length || 4,
-        todayScans: todayAnalysis || 127,
+        totalAlerts: notificationsRes.filter((n) => !n.read).length,
+        todayScans: todayAnalysis || analysisRes.length,
       });
 
       setRecentViolations(
